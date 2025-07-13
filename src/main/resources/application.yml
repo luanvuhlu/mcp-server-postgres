@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: mcp-server-postgres
+  
+  ai:
+    mcp:
+      server:
+        enabled: true
+        port: 3000
+        
+logging:
+  level:
+    com.luanvv.mcp: DEBUG
+    org.springframework.ai: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
