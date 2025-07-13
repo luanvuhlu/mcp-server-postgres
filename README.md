@@ -1,5 +1,10 @@
 # MCP Server PostgreSQL
 
+[![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/projects/jdk/21/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.4.1-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![Spring AI](https://img.shields.io/badge/Spring%20AI-1.0.0-blue.svg)](https://spring.io/projects/spring-ai)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A Model Context Protocol (MCP) server for PostgreSQL built with Spring Boot and Spring AI. This server provides read-only access to PostgreSQL databases through dynamic connections.
 
 ## ✅ Project Status
@@ -37,7 +42,7 @@ A Model Context Protocol (MCP) server for PostgreSQL built with Spring Boot and 
 
 1. **Clone and build the project:**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/luanvuhlu/mcp-server-postgres.git
    cd mcp-server-postgres
    mvn clean compile
    ```
@@ -52,7 +57,7 @@ A Model Context Protocol (MCP) server for PostgreSQL built with Spring Boot and 
    mvn spring-boot:run
    ```
 
-The MCP server will start on port 3000.
+The MCP server will start and be ready to accept connections via the Model Context Protocol.
 
 ### Testing with Sample Data
 
@@ -68,6 +73,33 @@ Sample schemas and tables are automatically created:
 - `public` schema: users, products
 - `sales` schema: orders, order_items
 - `inventory` schema: stock
+
+## Using with MCP Clients
+
+This server can be used with any MCP-compatible client. Here are some examples:
+
+### Claude Desktop
+
+Add the following to your Claude Desktop configuration file:
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "java",
+      "args": ["-jar", "target/mcp-server-postgres-1.0.0-SNAPSHOT.jar"]
+    }
+  }
+}
+```
+
+### Other MCP Clients
+
+The server implements the standard MCP protocol and can be used with any compatible client by running:
+
+```bash
+java -jar target/mcp-server-postgres-1.0.0-SNAPSHOT.jar
+```
 
 ## MCP Tools Usage
 
@@ -167,6 +199,10 @@ spring:
 ### Database Connections
 
 All database connections are dynamic and provided per request. No default database connection is configured.
+
+### MCP Server Protocol
+
+This server implements the Model Context Protocol (MCP) specification and communicates via JSON-RPC over stdio or TCP. The server registers the following tools that can be called by MCP-compatible clients.
 
 ## Development
 
