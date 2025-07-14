@@ -18,23 +18,38 @@ public class PostgresService {
     );
 
     public Connection createConnection(DatabaseConnection connection) throws SQLException {
+        log.debug("Creating database connection to {}:{}/{}",
+            connection.host(), connection.port(), connection.database());
+
         var username = connection.username() != null ? connection.username() : CACHE_CONNECTION.username();
         var password = connection.password() != null ? connection.password() : CACHE_CONNECTION.password();
         var port = connection.port() != null ? connection.port() : CACHE_CONNECTION.port();
         var host = connection.host() != null ? connection.host() : CACHE_CONNECTION.host();
         var database = connection.database() != null ? connection.database() : CACHE_CONNECTION.database();
-        CACHE_CONNECTION = new DatabaseConnection(
-            host, database, username, password, port
-        );
-        return DriverManager.getConnection(
-            CACHE_CONNECTION.getJdbcUrl(),
-            CACHE_CONNECTION.username(),
-            CACHE_CONNECTION.password()
-        );
+
+        CACHE_CONNECTION = new DatabaseConnection(host, database, username, password, port);
+
+        log.debug("Using connection parameters: host={}, port={}, database={}, username={}",
+            host, port, database, username);
+
+        try {
+            Connection conn = DriverManager.getConnection(
+                CACHE_CONNECTION.getJdbcUrl(),
+                CACHE_CONNECTION.username(),
+                CACHE_CONNECTION.password()
+            );
+            log.info("Successfully connected to PostgreSQL database: {}:{}/{}", host, port, database);
+            return conn;
+        } catch (SQLException e) {
+            log.error("Failed to connect to PostgreSQL database {}:{}/{}: {}",
+                host, port, database, e.getMessage());
+            throw e;
+        }
     }
 
-    @Tool(description = "List all schemas in a the database")
+    @Tool(description = "List all schemas in a the database", returnDirect = true)
     public List<String> listSchemas(DatabaseConnection connection) {
+        log.info("Listing schemas for database: {}", connection.database());
         List<String> schemas = new ArrayList<>();
         String sql = """
             SELECT schema_name
@@ -50,19 +65,26 @@ public class PostgresService {
             while (rs.next()) {
                 schemas.add(rs.getString("schema_name"));
             }
+
+            log.info("Found {} schemas in database {}", schemas.size(), connection.database());
+            log.debug("Schemas found: {}", schemas);
+
         } catch (SQLException e) {
-            log.error("Error listing schemas", e);
+            log.error("Error listing schemas for database {}: {}", connection.database(), e.getMessage(), e);
             throw new RuntimeException("Failed to list schemas: " + e.getMessage(), e);
         }
 
         return schemas;
     }
 
-    @Tool(description = "List all tables in a schema")
+    @Tool(description = "List all tables in a schema", returnDirect = true)
     public List<Map<String, Object>> listTables(DatabaseConnection connection, String schema) {
+        String targetSchema = schema != null ? schema : "public";
+        log.info("Listing tables in schema '{}' for database: {}", targetSchema, connection.database());
+
         List<Map<String, Object>> tables = new ArrayList<>();
         String sql = """
-            SELECT 
+            SELECT
                 t.table_name,
                 t.table_type,
                 obj_description(c.oid, 'pg_class') as table_comment
@@ -77,7 +99,7 @@ public class PostgresService {
         try (Connection conn = createConnection(connection);
              PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, schema != null ? schema : "public");
+            stmt.setString(1, targetSchema);
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
                     Map<String, Object> table = new HashMap<>();
@@ -87,22 +109,34 @@ public class PostgresService {
                     tables.add(table);
                 }
             }
+
+            log.info("Found {} tables in schema '{}' for database {}",
+                tables.size(), targetSchema, connection.database());
+            log.debug("Tables found: {}", tables.stream()
+                .map(t -> t.get("name")).toList());
+
         } catch (SQLException e) {
-            log.error("Error listing tables", e);
+            log.error("Error listing tables in schema '{}' for database {}: {}",
+                targetSchema, connection.database(), e.getMessage(), e);
             throw new RuntimeException("Failed to list tables: " + e.getMessage(), e);
         }
 
         return tables;
     }
 
-    @Tool(description = "Execute a read-only SQL query on a PostgreSQL database")
+    @Tool(description = "Execute a read-only SQL query on a PostgresSQL database", returnDirect = true)
     public List<Map<String, Object>> executeQuery(DatabaseConnection connection, String query) {
+        log.info("Executing query on database {}: {}", connection.database(),
+            query.length() > 100 ? query.substring(0, 100) + "..." : query);
+
         // Validate that the query is read-only
         if (!isReadOnlyQuery(query)) {
+            log.warn("Attempted to execute non-read-only query: {}", query);
             throw new IllegalArgumentException("Only SELECT queries are allowed");
         }
 
         List<Map<String, Object>> results = new ArrayList<>();
+        long startTime = System.currentTimeMillis();
 
         try (Connection conn = createConnection(connection);
              PreparedStatement stmt = conn.prepareStatement(query);
@@ -120,16 +154,27 @@ public class PostgresService {
                 }
                 results.add(row);
             }
+
+            long executionTime = System.currentTimeMillis() - startTime;
+            log.info("Query executed successfully in {}ms, returned {} rows", executionTime, results.size());
+            log.debug("First few results: {}", results.stream().limit(3).toList());
+
         } catch (SQLException e) {
-            log.error("Error executing query: {}", query, e);
+            log.error("Error executing query on database {}: {} - Query: {}",
+                connection.database(), e.getMessage(), query, e);
             throw new RuntimeException("Failed to execute query: " + e.getMessage(), e);
         }
 
         return results;
     }
 
-    @Tool(description = "Select rows from a PostgreSQL table with optional conditions and ordering")
+    @Tool(description = "Select rows from a PostgresSQL table with optional conditions and ordering", returnDirect = true)
     public List<Map<String, Object>> select(DatabaseConnection connection, SelectRequest request) {
+        log.info("Executing structured select on table '{}.{}' with conditions: {}",
+            request.schema() != null ? request.schema() : "public",
+            request.table(),
+            request.conditions() != null ? request.conditions() : "none");
+
         // Build the SELECT query from structured parameters
         StringBuilder queryBuilder = new StringBuilder("SELECT * FROM ");
 
@@ -157,17 +202,23 @@ public class PostgresService {
         }
 
         String query = queryBuilder.toString();
+        log.debug("Generated SELECT query: {}", query);
 
         return executeQuery(connection, query);
     }
 
     private boolean isReadOnlyQuery(String query) {
         String normalizedQuery = query.trim().toLowerCase();
-        return normalizedQuery.startsWith("select") ||
+        boolean isReadOnly = normalizedQuery.startsWith("select") ||
                normalizedQuery.startsWith("with") ||
                normalizedQuery.startsWith("show") ||
                normalizedQuery.startsWith("explain") ||
                normalizedQuery.startsWith("describe") ||
                normalizedQuery.startsWith("\\d");
+
+        log.debug("Query validation - isReadOnly: {} for query: {}", isReadOnly,
+            query.length() > 50 ? query.substring(0, 50) + "..." : query);
+
+        return isReadOnly;
     }
 }

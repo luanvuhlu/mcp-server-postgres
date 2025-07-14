@@ -1,9 +1,12 @@
 package com.luanvv.mcp.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import org.springframework.ai.tool.annotation.ToolParam;
 
 public record SelectRequest(
-    @JsonProperty(required = true) String table,
+    @ToolParam(description = "Name of the table to select from")
+    String table,
+    @ToolParam(description = "Schema of the table, default is 'public'", required = false)
     String schema,
     String conditions,
     String orderBy,

@@ -1,10 +1,17 @@
 package com.luanvv.mcp.model;
 
+import org.springframework.ai.tool.annotation.ToolParam;
+
 public record DatabaseConnection(
+    @ToolParam(description = "Database host, default is 127.0.0.1", required = false)
     String host,
+    @ToolParam(description = "Database name")
     String database,
+    @ToolParam(description = "Database username")
     String username,
+    @ToolParam(description = "Database password")
     String password,
+    @ToolParam(description = "Database port, default is 5432", required = false)
     Integer port
 ) {
 
